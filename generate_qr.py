@@ -1,7 +1,7 @@
 import qrcode
 
 # Use localhost for now — update with your deployed URL later
-base_url = "http://localhost:8501/?block="
+base_url = "https://mwanaisha222-edic-attendence-app-nbfzgp.streamlit.app/"
 
 blocks = ["civil", "electrical", "mechanical"]
 
