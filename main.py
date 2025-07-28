@@ -1,10 +1,8 @@
-# app.py
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime
 import pandas as pd
-import json
 import os
-from urllib.parse import urlparse
 
 # ---------- CONFIG ----------
 
@@ -17,24 +15,18 @@ USER_DB = {
 
 # CSV file to keep backup locally
 ATTENDANCE_FILE = "attendance.csv"
-NFC_MAPPING_FILE = "nfc_mapping.json"
+
+# Mapping of NFC/QR tag IDs to disciplines
+BLOCK_NFC_QR_MAPPING = {
+    "block_civil": "Civil",
+    "block_electrical": "Electrical",
+    "block_mechanical": "Mechanical"
+}
 
 # ---------- HELPER FUNCTIONS ----------
-def load_nfc_mapping():
-    """Load NFC tag to username mapping"""
-    if os.path.exists(NFC_MAPPING_FILE):
-        with open(NFC_MAPPING_FILE, 'r') as f:
-            return json.load(f)
-    return {}
-
-def save_nfc_mapping(mapping):
-    """Save NFC tag to username mapping"""
-    with open(NFC_MAPPING_FILE, 'w') as f:
-        json.dump(mapping, f)
-
-def perform_check_in(name, discipline, status_choice):
+def perform_check_in(name, discipline, status_choice, check_in_time=None):
     """Record attendance check-in"""
-    now = datetime.now()
+    now = check_in_time or datetime.now()
     current_time = now.strftime("%Y-%m-%d %H:%M:%S")
     current_hour_min = now.time()
 
@@ -120,37 +112,114 @@ def nfc_reader_component():
     <div id="nfcStatus" style="margin-top: 10px; color: #555;">Click to start NFC scanning</div>
     """
 
+# ---------- QR CODE FUNCTIONS ----------
+def qr_reader_component():
+    """HTML component for QR code scanning"""
+    return """
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script>
+    let video = null;
+    let stream = null;
+
+    async function startQRScanner() {
+        try {
+            video = document.createElement("video");
+            video.setAttribute("playsinline", "true");
+            video.style.width = "100%";
+            video.style.maxWidth = "300px";
+            document.getElementById("qrPreview").appendChild(video);
+
+            stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment" } 
+            });
+            video.srcObject = stream;
+            await video.play();
+
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d");
+
+            function scan() {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.height = video.videoHeight;
+                    canvas.width = video.videoWidth;
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                        inversionAttempts: "dontInvert"
+                    });
+
+                    if (code) {
+                        window.parent.postMessage({
+                            type: 'qrCodeRead',
+                            data: code.data
+                        }, '*');
+                        stopQRScanner();
+                        document.getElementById("qrStatus").innerText = `QR Code Scanned: ${code.data}`;
+                    } else {
+                        document.getElementById("qrStatus").innerText = "Scanning for QR code...";
+                        requestAnimationFrame(scan);
+                    }
+                } else {
+                    requestAnimationFrame(scan);
+                }
+            }
+
+            document.getElementById("qrStatus").innerText = "Starting QR scanner...";
+            requestAnimationFrame(scan);
+        } catch (error) {
+            document.getElementById("qrStatus").innerText = `Error: ${error.message}`;
+        }
+    }
+
+    function stopQRScanner() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        if (video) {
+            video.remove();
+            video = null;
+        }
+    }
+    </script>
+    
+    <button onclick="startQRScanner()" style="
+        padding: 10px 20px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 16px;
+        cursor: pointer;
+        margin-bottom: 10px;
+    ">Scan QR Code</button>
+    <div id="qrPreview" style="margin-bottom: 10px;"></div>
+    <div id="qrStatus" style="margin-top: 10px; color: #555;">Click to start QR code scanning</div>
+    """
+
 # ---------- PAGE SETUP ----------
 st.set_page_config(page_title="Intern Attendance System", page_icon="📋")
 
 # Initialize session state
 if 'nfc_tag' not in st.session_state:
     st.session_state.nfc_tag = None
-if 'nfc_username' not in st.session_state:
-    st.session_state.nfc_username = None
+if 'qr_code' not in st.session_state:
+    st.session_state.qr_code = None
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'current_user' not in st.session_state:
+    st.session_state.current_user = None
+if 'discipline' not in st.session_state:
+    st.session_state.discipline = None
+if 'login_time' not in st.session_state:
+    st.session_state.login_time = None
 
 # ---------- LOGIN ----------
 st.sidebar.header("🔐 Login")
-login_method = st.sidebar.radio("Login Method", ["Manual", "NFC"])
+login_method = st.sidebar.radio("Login Method", ["NFC", "QR Code"])
 
-if login_method == "Manual":
-    username = st.sidebar.text_input("Username")
-    pin = st.sidebar.text_input("PIN", type="password")
-    
-    if username and pin:
-        if username not in USER_DB or USER_DB[username] != pin:
-            st.sidebar.error("Invalid credentials")
-            st.stop()
-        else:
-            st.sidebar.success("Logged in!")
-            name = username.capitalize()
-            st.session_state.logged_in = True
-            st.session_state.current_user = name
-else:  # NFC Login
-    st.sidebar.info("Use NFC tag to login")
-    
-    # Load NFC mapping
-    nfc_mapping = load_nfc_mapping()
+if login_method == "NFC":
+    st.sidebar.info("Scan NFC tag at your discipline block to login")
     
     # Display NFC reader component
     components.html(nfc_reader_component(), height=150)
@@ -160,22 +229,64 @@ else:  # NFC Login
     if st.session_state.nfc_tag:
         nfc_data.info(f"Scanned NFC Tag: {st.session_state.nfc_tag}")
         
-        # Lookup username from NFC tag
-        username = nfc_mapping.get(st.session_state.nfc_tag)
-        
-        if username and username in USER_DB:
-            st.sidebar.success(f"Welcome {username.capitalize()}!")
-            name = username.capitalize()
-            st.session_state.logged_in = True
-            st.session_state.current_user = name
-            st.session_state.nfc_username = username
+        # Determine discipline from NFC tag
+        discipline = BLOCK_NFC_QR_MAPPING.get(st.session_state.nfc_tag)
+        if discipline:
+            st.session_state.discipline = discipline
+            st.sidebar.success(f"Detected block: {discipline}")
+            
+            # Prompt for username and PIN
+            username = st.sidebar.text_input("Username")
+            pin = st.sidebar.text_input("PIN", type="password")
+            
+            if st.sidebar.button("Confirm Login"):
+                if username and pin:
+                    if username not in USER_DB or USER_DB[username] != pin:
+                        st.sidebar.error("Invalid credentials")
+                    else:
+                        st.sidebar.success(f"Welcome {username.capitalize()}!")
+                        name = username.capitalize()
+                        st.session_state.logged_in = True
+                        st.session_state.current_user = name
+                        st.session_state.login_time = datetime.now()
+                        st.session_state.qr_code = None  # Reset QR code state
         else:
-            st.sidebar.error("Unregistered NFC tag")
+            st.sidebar.error("Unrecognized NFC tag. Please scan a valid block tag.")
+
+else:  # QR Code Login
+    st.sidebar.info("Scan QR code at your discipline block to login")
     
-    # Manual fallback
-    if st.sidebar.button("Manual Login Fallback"):
-        st.session_state.logged_in = False
-        st.session_state.nfc_tag = None
+    # Display QR code reader component
+    components.html(qr_reader_component(), height=200)
+    
+    # Handle QR code reads
+    qr_data = st.empty()
+    if st.session_state.qr_code:
+        qr_data.info(f"Scanned QR Code: {st.session_state.qr_code}")
+        
+        # Determine discipline from QR code
+        discipline = BLOCK_NFC_QR_MAPPING.get(st.session_state.qr_code)
+        if discipline:
+            st.session_state.discipline = discipline
+            st.sidebar.success(f"Detected block: {discipline}")
+            
+            # Prompt for username and PIN
+            username = st.sidebar.text_input("Username")
+            pin = st.sidebar.text_input("PIN", type="password")
+            
+            if st.sidebar.button("Confirm Login"):
+                if username and pin:
+                    if username not in USER_DB or USER_DB[username] != pin:
+                        st.sidebar.error("Invalid credentials")
+                    else:
+                        st.sidebar.success(f"Welcome {username.capitalize()}!")
+                        name = username.capitalize()
+                        st.session_state.logged_in = True
+                        st.session_state.current_user = name
+                        st.session_state.login_time = datetime.now()
+                        st.session_state.nfc_tag = None  # Reset NFC state
+        else:
+            st.sidebar.error("Unrecognized QR code. Please scan a valid block QR code.")
 
 # If not logged in, stop execution
 if not st.session_state.get('logged_in', False):
@@ -183,42 +294,35 @@ if not st.session_state.get('logged_in', False):
 
 # ---------- MAIN PAGE ----------
 name = st.session_state.current_user
+discipline = st.session_state.discipline
 st.title(f"📋 Intern Attendance System - Welcome {name}!")
 
-# ---------- GET DISCIPLINE FROM URL ----------
-query_params = st.experimental_get_query_params()
-discipline = query_params.get("block", [""])[0].capitalize()
-
-if discipline not in ["Civil", "Electrical", "Mechanical"]:
-    discipline = st.selectbox("Select your discipline/block", ["Civil", "Electrical", "Mechanical"])
-else:
-    st.success(f"🧭 Auto-detected block: **{discipline}**")
+# Display detected discipline
+st.success(f"🧭 Block: **{discipline}**")
 
 # ---------- SPECIAL STATUS ----------
 status_choice = st.selectbox("Special Status (optional)", ["None", "On Leave", "On Official Duty"])
 
 # ---------- CHECK-IN ----------
-if st.button("✅ Check In") or st.session_state.nfc_username:
-    # For NFC users, auto check-in when tag is scanned
-    if st.session_state.nfc_username:
-        username = st.session_state.nfc_username
-        name = username.capitalize()
-    
-    status, current_time = perform_check_in(name, discipline, status_choice)
+if st.button("✅ Check In"):
+    status, current_time = perform_check_in(name, discipline, status_choice, st.session_state.login_time)
     st.success(f"Attendance recorded as **{status}** at {current_time}")
     
-    # Reset NFC state after check-in
+    # Reset session state after check-in
     st.session_state.nfc_tag = None
-    st.session_state.nfc_username = None
+    st.session_state.qr_code = None
+    st.session_state.logged_in = False
+    st.session_state.current_user = None
+    st.session_state.discipline = None
+    st.session_state.login_time = None
 
 # ---------- ADMIN VIEW ----------
 with st.expander("🔐 Admin Panel"):
-    admin_tab, nfc_tab = st.tabs(["Attendance Logs", "NFC Management"])
+    admin_tab = st.tabs(["Attendance Logs"])[0]
     
     with admin_tab:
         try:
             df = pd.read_csv(ATTENDANCE_FILE)
-
             st.write("📅 Filter attendance records:")
             date_filter = st.text_input("Enter date (YYYY-MM-DD)", value=str(datetime.now().date()))
             discipline_filter = st.selectbox("Select discipline to filter", ["All", "Civil", "Electrical", "Mechanical"])
@@ -234,50 +338,25 @@ with st.expander("🔐 Admin Panel"):
 
         except FileNotFoundError:
             st.warning("No attendance records found yet.")
-    
-    with nfc_tab:
-        st.subheader("📱 NFC Tag Management")
-        nfc_mapping = load_nfc_mapping()
-        
-        # Display current mappings
-        if nfc_mapping:
-            st.write("Current NFC Tag Assignments:")
-            for tag, user in nfc_mapping.items():
-                st.write(f"- `{tag}` → **{user}**")
-        else:
-            st.info("No NFC tags registered yet")
-        
-        # Registration form
-        st.subheader("Register New NFC Tag")
-        new_username = st.selectbox("Select user", list(USER_DB.keys()))
-        
-        # NFC scanning for registration
-        st.markdown("### Scan NFC Tag for Registration")
-        components.html(nfc_reader_component(), height=150)
-        
-        if st.session_state.nfc_tag:
-            st.info(f"Scanned Tag: `{st.session_state.nfc_tag}`")
-            
-            if st.button(f"Assign to {new_username}"):
-                # Update mapping
-                nfc_mapping[st.session_state.nfc_tag] = new_username
-                save_nfc_mapping(nfc_mapping)
-                st.success(f"Tag assigned to {new_username}!")
-                st.session_state.nfc_tag = None
 
-# Listen for NFC events from JavaScript
+# Listen for NFC and QR code events from JavaScript
 components.html("""
 <script>
 window.addEventListener("message", (event) => {
-    if (event.data.type === 'nfcTagRead') {
+    if (event.data.type === 'nfcTagRead' || event.data.type === 'qrCodeRead') {
         Streamlit.setComponentValue(event.data.data);
     }
 });
 </script>
 """, height=0)
 
-# Handle NFC tag data from JavaScript
-nfc_tag_data = components.html("", key="nfc_listener")
-if nfc_tag_data:
-    st.session_state.nfc_tag = nfc_tag_data
+# Handle NFC/QR code data from JavaScript
+nfc_qr_data = components.html("", key="nfc_qr_listener")
+if nfc_qr_data:
+    if login_method == "NFC":
+        st.session_state.nfc_tag = nfc_qr_data
+        st.session_state.qr_code = None
+    else:
+        st.session_state.qr_code = nfc_qr_data
+        st.session_state.nfc_tag = None
     st.experimental_rerun()
