@@ -3,7 +3,7 @@ import qrcode
 # Base URL of your Streamlit app
 # Replace this with your deployed app URL (e.g., 'https://your-app-name.streamlit.app')
 # For local testing, use 'http://localhost:8501'
-BASE_URL = "http://localhost:8501"  # Change this to your deployed URL when ready
+BASE_URL = "https://mwanaisha222-edic-attendence-main-ndibxo.streamlit.app/"  # Change this to your deployed URL when ready
 
 # Mapping of blocks to query parameter values
 blocks = [
