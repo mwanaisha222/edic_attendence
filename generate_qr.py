@@ -1,13 +1,10 @@
 import qrcode
 
-# Use localhost for now — update with your deployed URL later
-base_url = "https://mwanaisha222-edic-attendence-app-nbfzgp.streamlit.app/"
-
-blocks = ["civil", "electrical", "mechanical"]
+# Generate QR codes with mapping keys instead of URLs
+blocks = ["block_civil", "block_electrical", "block_mechanical"]
 
 for block in blocks:
-    full_url = base_url + block
-    qr = qrcode.make(full_url)
+    qr = qrcode.make(block)
     qr.save(f"{block}_qr.png")
 
 print("✅ QR codes generated for Civil, Electrical, and Mechanical blocks.")

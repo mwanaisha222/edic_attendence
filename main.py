@@ -264,29 +264,26 @@ else:  # QR Code Login
     if st.session_state.qr_code:
         qr_data.info(f"Scanned QR Code: {st.session_state.qr_code}")
         
-        # Determine discipline from QR code
-        discipline = BLOCK_NFC_QR_MAPPING.get(st.session_state.qr_code)
-        if discipline:
-            st.session_state.discipline = discipline
-            st.sidebar.success(f"Detected block: {discipline}")
-            
-            # Prompt for username and PIN
-            username = st.sidebar.text_input("Username")
-            pin = st.sidebar.text_input("PIN", type="password")
-            
-            if st.sidebar.button("Confirm Login"):
-                if username and pin:
-                    if username not in USER_DB or USER_DB[username] != pin:
-                        st.sidebar.error("Invalid credentials")
-                    else:
-                        st.sidebar.success(f"Welcome {username.capitalize()}!")
-                        name = username.capitalize()
-                        st.session_state.logged_in = True
-                        st.session_state.current_user = name
-                        st.session_state.login_time = datetime.now()
-                        st.session_state.nfc_tag = None  # Reset NFC state
-        else:
-            st.sidebar.error("Unrecognized QR code. Please scan a valid block QR code.")
+        # Extract block name from URL
+        try:
+            # Get the last part of the URL (e.g., 'civil' from 'https://.../civil')
+            block_name = st.session_state.qr_code.split('/')[-1].lower()
+            mapping_key = f"block_{block_name}"
+        except:
+            st.sidebar.error("Invalid QR code format")
+            block_name = None
+            mapping_key = None
+        
+        # Determine discipline from extracted block name
+        if mapping_key:
+            discipline = BLOCK_NFC_QR_MAPPING.get(mapping_key)
+            if discipline:
+                st.session_state.discipline = discipline
+                st.sidebar.success(f"Detected block: {discipline}")
+                
+                # ... rest of your login code remains the same ...
+            else:
+                st.sidebar.error("Unrecognized block. Please scan a valid block QR code.")
 
 # If not logged in, stop execution
 if not st.session_state.get('logged_in', False):
