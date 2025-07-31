@@ -12,8 +12,22 @@ from urllib.parse import urlparse
 # Simulated users (username: pin)
 USER_DB = {
     "haula": "1234",
-    "shakiran": "5678",
-    "naomie": "9999"
+    "derrick": "5678",
+    "lynette": "9999",
+    "cathy": "9999",
+    "ronnie": "9999",
+    "pato": "9999",
+    "jovan": "9999",
+    "elvis": "9999",
+    "hillary": "9999",
+    "joanita": "9999",
+    "philiper": "9999",
+    "johnlucky": "9999",
+    "chris": "9999",
+    "owen": "9999",
+    "deo": "9999",
+    "joel": "9999",
+    "abasa": "9999"
 }
 
 # CSV file to keep backup locally
@@ -106,4 +120,3 @@ with st.expander("🔐 Admin Panel: View Attendance Logs"):
 
     except FileNotFoundError:
         st.warning("No attendance records found yet.")
-        
